@@ -26,7 +26,7 @@ library(tidyverse)
 ```
 
 ```{r}
-fieldweather 
+fieldweather <- read_csv("../data/fieldweatherdata.csv")
 
 fieldweather
 ```
@@ -40,7 +40,11 @@ summary(fieldweather)
 
 Let's create some density plots to explore the weather data distributions.  
 ```{r}
-
+fieldweather %>%
+  pivot_longer(cols = dayl_s:vp_pa) %>%
+  ggplot(aes(x = value)) +
+  geom_density() +
+  facet_wrap(.~name, scales = "free")
 
 ```
 
@@ -59,15 +63,6 @@ Rather, plants respond to the cumulative effects of weather across many days.
 How could we use this understanding to create new features from the current ones?    
 
 ## Quiz - go to eLC  
-
-
-
-
-
-
-
-
-
 
 There are **two components** that we can consider when feature engineering weather data:  
 
@@ -111,19 +106,28 @@ fe_month <- fieldweather %>%
                 tmax.c = tmax_deg_c, 
                 tmin.c = tmin_deg_c,
                 vp.pa = vp_pa
-                ) 
+                ) %>% 
   # Creating a date class variable  
-
+  mutate(data_chr = paste0(year, "/", yday)) %>%
+  mutate(date = as.Date(data_chr, "%Y/%j")) %>%
   # Extracting month from date  
-
+  mutate(month = month(date)) %>%
+  mutate(month_abb = month(date, label = T))
 
 fe_month
 ```
 
 Now, let's summarize daily weather variables based on month.  
 ```{r fe_month_sum}
-fe_month_sum 
-
+fe_month_sum <- fe_month %>%
+  group_by(year, site, month, month_abb, strength_gtex) %>%
+  summarise(across(c(dayl.s, srad.wm2, tmax.c, tmin.c, vp.pa),
+                   mean,
+                   .names = "mean_{.col}"),
+            across(prcp.mm,
+                   sum,
+                   .names = "sum_{.col}")) %>%
+  ungroup()
 
 fe_month_sum
 ```
@@ -144,7 +148,14 @@ fe_month %>%
 Now, what if we wanted to have month as part of the column name instead?  
 
 ```{r fe_month_sum_wide}
-fe_month_sum_wide 
+fe_month_sum_wide <- fe_month_sum %>%
+  pivot_longer(cols = mean_dayl.s:sum_prcp.mm) %>%
+  mutate(varname = paste0(name, "_", month_abb)) %>%
+  dplyr::select(-name, -month_abb, -month) %>%
+  pivot_wider(names_from = varname,
+              values_from = value)
+
+
   # Rounding to one decimal point
 
 fe_month_sum_wide  
@@ -162,14 +173,39 @@ Let's make a ridge plot to visualize the distribution of one variable over month
 #install.packages("ggridges")
 library(ggridges)
 
+ggplot(data = fe_month_sum,
+       aes(x = mean_tmax.c,
+           y = month_abb,
+           fill = stat(x)
+           )
+       ) +
+  geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+  scale_fill_viridis_c(option = "C") +
+  theme(legend.position = "none")
 
 ```
 
 Now let's do that for all variables.  
 ```{r}
-finalplots 
-  
-  
+finalplots <- fe_month_sum %>%
+  pivot_longer(mean_dayl.s:sum_prcp.mm) %>%
+  group_by(name) %>%
+  nest() %>%
+  mutate(plot = map2(data, name,
+                     ~ ggplot(data = .x,
+       aes(x = value,
+           y = month_abb,
+           fill = stat(x)
+           )
+       ) +
+  geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+  scale_fill_viridis_c(option = "C") +
+  theme(legend.position = "none") +
+    labs(x = .y)
+                       ))
+
+
+finalplots  
 ```
 
 ```{r}
